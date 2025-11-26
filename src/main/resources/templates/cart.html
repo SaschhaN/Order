@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Your Cart</title>
+</head>
+<body>
+<h1>Your Shopping Cart</h1>
+
+<table border="1" th:if="${cart.items}">
+    <tr>
+        <th>ISBN</th>
+        <th>Title</th>
+        <th>Description</th>
+        <th>Author</th>
+    </tr>
+
+    <tr th:each="book : ${cart.items}">
+        <td th:text="${book.isbn}"></td>
+        <td th:text="${book.title}"></td>
+        <td th:text="${book.description}"></td>
+        <td th:text="${book.author}"></td>
+    </tr>
+</table>
+
+<p th:if="${#lists.isEmpty(cart.items)}">Your cart is empty.</p>
+
+<br/>
+<a href="/search">Back to Search</a>
+
+</body>
+</html>
