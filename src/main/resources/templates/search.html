@@ -30,6 +30,7 @@
         <td>
             <form th:action="@{/cart/add}" method="post">
                 <input type="hidden" name="isbn" th:value="${book.isbn}">
+                <input type="hidden" name="keywords" th:value="${keywords}">
                 <button type="submit">Add to Cart</button>
             </form>
         </td>
