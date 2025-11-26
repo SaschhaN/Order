@@ -4,8 +4,11 @@ import org.agile.order.model.Book;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.client.RestClient;
+import org.agile.order.service.ShoppingCartService;
+import org.agile.order.model.ShoppingCart;
 
 @Controller
 public class CatalogController {
@@ -38,4 +41,25 @@ public class CatalogController {
 
         return "search";
     }
+
+    private final ShoppingCartService cartService;
+    public CatalogController(ShoppingCartService cartService) {
+        this.cartService = cartService;
+    }
+
+    @PostMapping("/cart/add")
+    public String addToCart(@RequestParam String isbn,
+                            @RequestParam(required = false) String keywords) {
+
+        Book book = restClient.get()
+                .uri("http://localhost:8080/api/books/isbn/{isbn}", isbn)
+                .retrieve()
+                .body(Book.class);
+
+        cartService.addToCart(book);
+
+        return "redirect:/search?keywords=" + (keywords != null ? keywords : "");
+    }
+
+
 }
