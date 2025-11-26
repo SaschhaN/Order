@@ -47,6 +47,12 @@ public class CatalogController {
         this.cartService = cartService;
     }
 
+    @GetMapping("/cart")
+    public String viewCart(Model model) {
+        model.addAttribute("cart", cartService.getCart());
+        return "cart";
+    }
+
     @PostMapping("/cart/add")
     public String addToCart(@RequestParam String isbn,
                             @RequestParam(required = false) String keywords) {
