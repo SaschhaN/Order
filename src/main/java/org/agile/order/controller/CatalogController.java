@@ -1,6 +1,7 @@
 package org.agile.order.controller;
 
 import org.agile.order.model.Book;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,20 +14,32 @@ import org.agile.order.model.ShoppingCart;
 @Controller
 public class CatalogController {
 
-    private final RestClient restClient = RestClient.builder()
-            .baseUrl("http://localhost:8080/api/books/search")
-            .build();
+    private final String catalogServiceBaseUrl;
+    private final RestClient restClient;
+    private final ShoppingCartService cartService; // <--- HIER DEKLARIERT
+
+    //Alle Initialisierungen in einem Konstruktor zusammenfassen
+    public CatalogController(ShoppingCartService cartService,
+                             @Value("${catalog.service.url}") String catalogServiceBaseUrl) {
+
+        this.cartService = cartService;
+        this.catalogServiceBaseUrl = catalogServiceBaseUrl;
+
+        // RestClient mit der INJIZIERTEN Basis-URL erstellen
+        this.restClient = RestClient.builder()
+                .baseUrl(this.catalogServiceBaseUrl)
+                .build();
+    }
 
     @GetMapping("/search")
     public String search(@RequestParam(required = false) String keywords, Model model) {
-
-        Book[] books = new Book[0]; // default empty list
+        Book[] books = new Book[0];
 
         if (keywords != null && !keywords.isBlank()) {
             String[] keywordArray = keywords.split("\\s+");
 
             books = restClient.get()
-                    .uri(uriBuilder -> {
+                    .uri("/api/books/search", uriBuilder -> {
                         for (String k : keywordArray) {
                             uriBuilder.queryParam("keywords", k);
                         }
@@ -42,11 +55,6 @@ public class CatalogController {
         return "search";
     }
 
-    private final ShoppingCartService cartService;
-    public CatalogController(ShoppingCartService cartService) {
-        this.cartService = cartService;
-    }
-
     @GetMapping("/cart")
     public String viewCart(Model model) {
         model.addAttribute("cart", cartService.getCart());
@@ -58,7 +66,7 @@ public class CatalogController {
                             @RequestParam(required = false) String keywords) {
 
         Book book = restClient.get()
-                .uri("http://localhost:8080/api/books/isbn/{isbn}", isbn)
+                .uri("/api/books/isbn/{isbn}", isbn)
                 .retrieve()
                 .body(Book.class);
 
@@ -66,6 +74,4 @@ public class CatalogController {
 
         return "redirect:/search?keywords=" + (keywords != null ? keywords : "");
     }
-
-
 }
