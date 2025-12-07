@@ -1,81 +1,79 @@
 package org.agile.order.e2e;
 
+import com.microsoft.playwright.Locator;
+import com.microsoft.playwright.Page;
 import com.microsoft.playwright.junit.UsePlaywright;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import com.microsoft.playwright.Page;
-import com.microsoft.playwright.Locator;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
 
-// Startet den eingebetteten Spring Boot Server auf einem zufälligen Port für den Test
-// Wichtiger Hinweis: Obwohl die Anforderung Port 8081 nennt, mussten wir für den Test den
-// dynamischen Port verwenden, der vom @SpringBootTest zugewiesen wird, um einen
-// "Connection Refused"-Fehler zu vermeiden.
+// Tells JUnit to look for @Container fields
+@Testcontainers
+// Using RANDOM_PORT because the Order Service is being started by this test
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @UsePlaywright
 public class BookstoreTest {
 
-    // Wird vom Spring Boot Test-Framework mit dem dynamisch zugewiesenen Port injiziert
+    // 1. Defining the Catalog Container
+    @Container
+    static GenericContainer<?> catalogService = new GenericContainer<>("bookstore_catalog-catalog-service:latest")
+            .withExposedPorts(8080); // Expose the internal Catalog port (8080)
+
+    // 2. Dynamically set the Catalog Service URL
+    // This method runs before the Spring context is created and overrides the default catalog.service.url
+    @DynamicPropertySource
+    static void setProperties(DynamicPropertyRegistry registry) {
+        // Order Service (running locally on a random port) needs to know the Catalog Service's dynamic IP/Port
+        registry.add("catalog.service.url", () ->
+                String.format("http://%s:%d",
+                        catalogService.getHost(),
+                        catalogService.getMappedPort(8080)));
+    }
+
+    // The E2E Test Setup
     @LocalServerPort
-    private int port;
+    private int orderPort;
+    private String orderBaseUrl;
 
     private Page page;
 
-    // Wird vor jedem Test ausgeführt, um das Playwright Page-Objekt zu initialisieren
     @BeforeEach
     void setUp(Page page) {
         this.page = page;
+        // The browser hits the Order Service which is started by the test
+        this.orderBaseUrl = "http://localhost:" + orderPort;
     }
 
     @Test
     void searchAndAddBookToCartTest() {
-        // Angenommene Daten für den Test. Passen Sie diese an die tatsächlichen Daten an.
         final String SEARCH_TERM = "Java";
         final String EXPECTED_BOOK_TITLE = "Effective Java";
 
-        // Die Basis-URL verwendet den dynamisch zugewiesenen Port
-        String baseUrl = "http://localhost:" + port;
+        // Navigation uses the dynamic port of the Order Service
+        page.navigate(orderBaseUrl + "/search");
 
-        // 1. Browser unter der korrekten Startseite (/search) öffnen
-        page.navigate(baseUrl + "/search");
-
-        // 2. Wert im Suchfeld eingeben (Selector: input[name='keywords'])
         page.locator("input[name='keywords']").fill(SEARCH_TERM);
-
-        // 3. Such-Button betätigen (Selector: button mit Text 'Search')
         page.locator("button:has-text('Search')").click();
 
-        // Optional: Warten, bis die Ergebnisse geladen sind
-        page.waitForLoadState();
-
-        // --- 4. Überprüfen, ob die erwarteten Bücher angezeigt werden ---
-        // Wir suchen die Tabellenzeile (tr), die den erwarteten Buchtitel enthält.
-        Locator bookRowLocator = page.locator("table tr")
+        // Check if the Order Service successfully called the Testcontainer Catalog Service
+        Locator bookRow = page.locator("table tr")
                 .filter(new Locator.FilterOptions().setHasText(EXPECTED_BOOK_TITLE));
+        assertThat(bookRow).isVisible();
 
-        // FEHLER BEHOBEN: .as(...) entfernt, da es in Playwright-Assertions nicht existiert.
-        assertThat(bookRowLocator)
-                .isVisible();
+        Locator addToCartBtn = bookRow.locator("button:has-text('Add to Cart')");
+        addToCartBtn.click();
+        page.waitForTimeout(500);
 
-        // --- 5. Ein Buch in den Warenkorb legen ---
-        // Wir suchen den "Add to Cart"-Button *innerhalb* der gefundenen Buchzeile.
-        Locator addToCartButton = bookRowLocator.locator("button:has-text('Add to Cart')");
-        addToCartButton.click();
-
-        // Nach dem Klick wird die Seite wahrscheinlich zur Suchseite zurückgeleitet (dank des "keywords" hidden input).
-
-        // --- 6. Zum Warenkorb navigieren und überprüfen, ob das ausgewählte Buch enthalten ist ---
-        page.navigate(baseUrl + "/cart");
-
-
-        Locator cartItemLocator = page.locator("table tr")
+        page.navigate(orderBaseUrl + "/cart");
+        Locator cartItem = page.locator("table tr")
                 .filter(new Locator.FilterOptions().setHasText(EXPECTED_BOOK_TITLE));
-
-        assertThat(cartItemLocator)
-                .isVisible();
-
-        System.out.println("E2E-Test erfolgreich: Buch gesucht, gefunden und zum Warenkorb hinzugefügt und verifiziert.");
+        assertThat(cartItem).isVisible();
     }
 }
