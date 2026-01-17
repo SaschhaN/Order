@@ -11,7 +11,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    
     - name: Checkout Code
       uses: actions/checkout@v4
 
@@ -20,9 +19,15 @@ jobs:
       with:
         java-version: '21'
         distribution: 'temurin'
-        cache: maven  # aktiviert automatisch den Cache für Abhängigkeiten
+        cache: maven
 
-    #Tests ausführen & JaCoCo Report generieren
+    - name: Login to Docker Hub
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
     - name: Run Tests and Generate Coverage
       run: mvn clean verify
 
@@ -32,13 +37,6 @@ jobs:
         name: jacoco-report-${{ github.event.repository.name }}
         path: "**/target/site/jacoco/"
         retention-days: 5
-
-    - name: Login to Docker Hub
-      if: github.event_name != 'pull_request'
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
 
     - name: Build and Push Docker Image
       if: github.event_name != 'pull_request'
