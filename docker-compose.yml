@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  catalog-db:
+    image: postgres:15-alpine
+    container_name: catalog-db
+    ports:
+      - "5432:5432"
+    environment:                    
+      - POSTGRES_USER=catalog
+      - POSTGRES_PASSWORD=catalog
+      - POSTGRES_DB=catalogdb
+
+  catalog-service:
+    # Nutze dein Image von Docker Hub statt lokalem Build
+    image: saschhan/catalog:latest
+    container_name: catalog
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_PORT=8080
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://catalog-db:5432/catalogdb
+      - SPRING_DATASOURCE_USERNAME=catalog
+      - SPRING_DATASOURCE_PASSWORD=catalog
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+    depends_on:
+      - catalog-db
+
+  order-service:
+    # Nutze dein Image von Docker Hub statt lokalem Build
+    image: saschhan/order:latest
+    container_name: order
+    ports:
+      - "8081:8081"
+    environment:
+      - SERVER_PORT=8081
+      # Der Hostname 'catalog-service' bezieht sich auf den Namen oben
+      - CATALOG_SERVICE_URL=http://catalog-service:8080
+    depends_on:
+      - catalog-service
