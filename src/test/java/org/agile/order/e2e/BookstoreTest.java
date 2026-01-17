@@ -10,9 +10,11 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
+import org.testcontainers.containers.Network;
 
 // Tells JUnit to look for @Container fields
 @Testcontainers
@@ -21,20 +23,39 @@ import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertTha
 @UsePlaywright
 public class BookstoreTest {
 
-    // 1. Defining the Catalog Container
-    @Container
-    static GenericContainer<?> catalogService = new GenericContainer<>("bookstore_catalog-catalog-service:latest")
-            .withExposedPorts(8080); // Expose the internal Catalog port (8080)
+    // 1. Das gemeinsame Netzwerk (muss static sein)
+    static Network network = Network.newNetwork();
 
-    // 2. Dynamically set the Catalog Service URL
-    // This method runs before the Spring context is created and overrides the default catalog.service.url
+    // 2. Der Datenbank-Container (Generic oder PostgreSQLContainer)
+    @Container
+    static GenericContainer<?> catalogDb = new GenericContainer<>("postgres:15-alpine")
+            .withNetwork(network)
+            .withNetworkAliases("catalog-db") // Das ist der Hostname für den Catalog-Service
+            .withEnv("POSTGRES_DB", "catalogdb")
+            .withEnv("POSTGRES_USER", "user")
+            .withEnv("POSTGRES_PASSWORD", "password")
+            // Wir warten, bis die DB wirklich bereit ist
+            .waitingFor(Wait.forLogMessage(".*database system is ready to accept connections.*\\n", 1));
+
+    // 3. Der Catalog-Service
+    @Container
+    static GenericContainer<?> catalogService = new GenericContainer<>("agileproject-catalog-service:latest")
+            .withNetwork(network)
+            .withExposedPorts(8080)
+            // HIER WIRD DIE VERBINDUNG DEFINIERT:
+            .withEnv("SPRING_DATASOURCE_URL", "jdbc:postgresql://catalog-db:5432/catalogdb")
+            .withEnv("SPRING_DATASOURCE_USERNAME", "user")
+            .withEnv("SPRING_DATASOURCE_PASSWORD", "password")
+            .dependsOn(catalogDb) // Ganz wichtig: DB muss zuerst da sein
+            .waitingFor(Wait.forHttp("/actuator/health").forStatusCode(200));
+
     @DynamicPropertySource
     static void setProperties(DynamicPropertyRegistry registry) {
-        // Order Service (running locally on a random port) needs to know the Catalog Service's dynamic IP/Port
-        registry.add("catalog.service.url", () ->
-                String.format("http://%s:%d",
-                        catalogService.getHost(),
-                        catalogService.getMappedPort(8080)));
+        // Hier sagen wir dem ORDER-SERVICE (der lokal läuft), wo er den CATALOG findet
+        String catalogUrl = String.format("http://%s:%d",
+                catalogService.getHost(),
+                catalogService.getMappedPort(8080));
+        registry.add("catalog.service.url", () -> catalogUrl);
     }
 
     // The E2E Test Setup

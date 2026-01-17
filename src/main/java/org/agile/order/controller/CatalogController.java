@@ -1,57 +1,38 @@
 package org.agile.order.controller;
 
 import org.agile.order.model.Book;
-import org.springframework.beans.factory.annotation.Value;
+import org.agile.order.service.CatalogClient;
+import org.agile.order.service.ShoppingCartService;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.client.RestClient;
-import org.agile.order.service.ShoppingCartService;
-import org.agile.order.model.ShoppingCart;
 
 @Controller
 public class CatalogController {
 
-    private final String catalogServiceBaseUrl;
-    private final RestClient restClient;
-    private final ShoppingCartService cartService; // <--- HIER DEKLARIERT
+    private final CatalogClient catalogClient;
+    private final ShoppingCartService cartService;
 
-    //Alle Initialisierungen in einem Konstruktor zusammenfassen
-    public CatalogController(ShoppingCartService cartService,
-                             @Value("${catalog.service.url}") String catalogServiceBaseUrl) {
-
+    // Konstruktor: Nur noch diese zwei Services injizieren
+    public CatalogController(ShoppingCartService cartService, CatalogClient catalogClient) {
         this.cartService = cartService;
-        this.catalogServiceBaseUrl = catalogServiceBaseUrl;
-
-        // RestClient mit der INJIZIERTEN Basis-URL erstellen
-        this.restClient = RestClient.builder()
-                .baseUrl(this.catalogServiceBaseUrl)
-                .build();
+        this.catalogClient = catalogClient;
     }
 
     @GetMapping("/search")
-    public String search(@RequestParam(required = false) String keywords, Model model) {
+    public String search(@RequestParam(name = "keywords", required = false) String keywords, Model model) {
         Book[] books = new Book[0];
 
         if (keywords != null && !keywords.isBlank()) {
             String[] keywordArray = keywords.split("\\s+");
-
-            books = restClient.get()
-                    .uri("/api/books/search", uriBuilder -> {
-                        for (String k : keywordArray) {
-                            uriBuilder.queryParam("keywords", k);
-                        }
-                        return uriBuilder.build();
-                    })
-                    .retrieve()
-                    .body(Book[].class);
+            // Nutzt den Client (mit dem @Retry darin)
+            books = catalogClient.searchBooks(keywordArray);
         }
 
         model.addAttribute("books", books);
         model.addAttribute("keywords", keywords);
-
         return "search";
     }
 
@@ -62,15 +43,15 @@ public class CatalogController {
     }
 
     @PostMapping("/cart/add")
-    public String addToCart(@RequestParam String isbn,
-                            @RequestParam(required = false) String keywords) {
+    public String addToCart(@RequestParam("isbn") String isbn,
+                            @RequestParam(name = "keywords", required = false) String keywords) {
 
-        Book book = restClient.get()
-                .uri("/api/books/isbn/{isbn}", isbn)
-                .retrieve()
-                .body(Book.class);
+        // Nutzt den Client (mit dem @Retry darin)
+        Book book = catalogClient.getBookByIsbn(isbn);
 
-        cartService.addToCart(book);
+        if (book != null) {
+            cartService.addToCart(book);
+        }
 
         return "redirect:/search?keywords=" + (keywords != null ? keywords : "");
     }
